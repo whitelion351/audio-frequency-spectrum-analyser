@@ -2,8 +2,7 @@ from audioobject import AudioObject
 import numpy as np
 from PIL import Image
 import cv2
-import time
-
+import random
 
 class AudioVisualizer:
     """Takes waveform spectrum data (specifically FFT data returned from scipy.fftpack and displays
@@ -47,6 +46,8 @@ class AudioVisualizer:
             self.draw_style_1(spec_data)
         elif self.style == 2:
             self.draw_style_2(spec_data)
+        elif self.style == 3:
+            self.draw_style_3(spec_data)
         else:
             print("you need to specify a valid draw style")
             raise ValueError
@@ -105,7 +106,120 @@ class AudioVisualizer:
             display_np += bar
             angle += bar_angle
         display_np = display_np.clip(0.0, 255.0)
-        cv2.imshow("output", np.array(display_np))
+        cv2.imshow("output", display_np)
+        cv2.waitKey(1)
+
+    def draw_style_3(self, data):
+        left_arm_lower = np.zeros((21, 11))
+        left_arm_lower[10:, -1] = 255.0
+        left_arm_lower = Image.fromarray(left_arm_lower)
+
+        right_arm_lower = np.zeros((21, 11))
+        right_arm_lower[10:, 0] = 255.0
+        right_arm_lower = Image.fromarray(right_arm_lower)
+
+        left_leg_upper = np.zeros((11, 11))
+        left_leg_upper[:, -1] = 255.0
+        left_leg_upper = Image.fromarray(left_leg_upper)
+
+        right_leg_upper = np.zeros((11, 11))
+        right_leg_upper[:, 0] = 255.0
+        right_leg_upper = Image.fromarray(right_leg_upper)
+
+        leg_lower = np.zeros((11, 1))
+        leg_lower[:, :] = 255.0
+
+        display_np = np.zeros((50, 50))
+        # draw base body
+        display_np[10:25, 24] = 255.0
+        # hips
+        display_np[25, 20:29] = 255.0
+        # upper arms
+        display_np[15, 10:20] = 255.0
+        display_np[15, -21:-11] = 255.0
+
+        # left arm
+        band_values = [val for val in data[:self.bands[1]]]
+        cursor_value = self.get_meter_value(max(band_values), self.meter_sensitivity, 180)
+        if cursor_value > 2:
+            cursor_value += random.randrange(int(-cursor_value / 2), int(cursor_value / 2))
+        cursor_value = 0 if cursor_value < 0 else cursor_value
+        cursor_value = 180 if cursor_value > 180 else cursor_value
+        left_arm_lower = left_arm_lower.rotate(-cursor_value, center=(10, 10))
+        display_np[5:26, 0:11] += np.array(left_arm_lower)
+
+        # right arm
+#        band_values = [val for val in data[self.bands[2]:self.bands[3]]]
+        band_values = [val for val in data[:self.bands[1]]]
+        cursor_value = self.get_meter_value(max(band_values), self.meter_sensitivity, 180)
+        if cursor_value > 2:
+            cursor_value += random.randrange(int(-cursor_value / 2), int(cursor_value / 2))
+        cursor_value = 0 if cursor_value < 0 else cursor_value
+        cursor_value = 180 if cursor_value > 180 else cursor_value
+        right_arm_lower = right_arm_lower.rotate(cursor_value, center=(1, 10))
+        display_np[5:26, -12:-1] += np.array(right_arm_lower)
+
+        # left leg
+        angle_limit = 80
+#        band_values = [val for val in data[self.bands[4]:self.bands[5]]]
+        band_values = [val for val in data[:self.bands[1]]]
+        cursor_value = self.get_meter_value(max(band_values), self.meter_sensitivity, angle_limit)
+        if cursor_value > 2:
+            cursor_value += random.randrange(int(-cursor_value / 2), int(cursor_value / 2))
+        cursor_value = 0 if cursor_value < 0 else cursor_value
+        cursor_value = angle_limit if cursor_value > angle_limit else cursor_value
+        left_leg_upper = left_leg_upper.rotate(-cursor_value, center=(10, 0))
+        left_leg_upper = np.array(left_leg_upper)
+        display_np[25:36, 10:21] += left_leg_upper
+        l_pos_x = -1
+        l_pos_y = -1
+        counter = len(left_leg_upper) - 1
+        while counter >= 0:
+            if sum(left_leg_upper[counter]) > 0:
+                l_pos_x = counter
+                for iy, y in enumerate(left_leg_upper[counter]):
+                    if y > 0:
+                        l_pos_y = iy
+                        break
+                if l_pos_y >= 0:
+                    break
+            counter -= 1
+            if counter == -1:
+                print("could not find left leg knee position")
+        display_np[25+l_pos_x:25+l_pos_x+11, 10+l_pos_y:10+l_pos_y+1] += leg_lower
+
+        # right leg
+        angle_limit = 80
+#        band_values = [val for val in data[self.bands[6]:]]
+        band_values = [val for val in data[:self.bands[1]]]
+        cursor_value = self.get_meter_value(max(band_values), self.meter_sensitivity, angle_limit)
+        if cursor_value > 2:
+            cursor_value += random.randrange(int(-cursor_value / 2), int(cursor_value / 2))
+        cursor_value = 0 if cursor_value < 0 else cursor_value
+        cursor_value = angle_limit if cursor_value > angle_limit else cursor_value
+        right_leg_upper = right_leg_upper.rotate(cursor_value, center=(1, 0))
+        right_leg_upper = np.array(right_leg_upper)
+        display_np[25:36, 28:39] += right_leg_upper
+        l_pos_x = -1
+        l_pos_y = -1
+        counter = len(right_leg_upper) - 1
+        while counter >= 0:
+            if sum(right_leg_upper[counter]) > 0:
+                l_pos_x = counter
+                for iy, y in enumerate(right_leg_upper[counter]):
+                    if y > 0:
+                        l_pos_y = iy
+                if l_pos_y >= 0:
+                    break
+            counter -= 1
+            if counter == -1:
+                print("could not find right leg knee position")
+        display_np[25+l_pos_x:25+l_pos_x+11, 28+l_pos_y:28+l_pos_y+1] += leg_lower
+
+        output_image = Image.fromarray(display_np.astype(np.uint8))
+        output_image = output_image.resize((len(display_np[0]) * self.display_zoom,
+                                            len(display_np) * self.display_zoom))
+        cv2.imshow("output", np.array(output_image))
         cv2.waitKey(1)
 
     @staticmethod
@@ -119,7 +233,7 @@ class AudioVisualizer:
 if __name__ == "__main__":
     # audio = AudioObject(filename="freq_test.opus", create_plot=False)
     audio = AudioObject(chunk=2048, create_plot=False)
-    visualizer = AudioVisualizer(style=2, audio_object=audio)
+    visualizer = AudioVisualizer(style=3, audio_object=audio)
     while not audio.file_finished:
         audio_data = audio.get_next_chunk()
         if not audio.file_finished:
